@@ -9,6 +9,8 @@ class IODynamixel:
 
 	def __init__(self, motors, freq=50, port='/dev/ttyUSB0', baudrate=1000000, protocol=1.0, debug=True):
 		self.motors = motors
+		for motor in motors:
+			motors[motor]['currentPosition'] = float('nan') 
 		self.freq = freq
 		self.period = 1/self.freq
 		self.port = port
@@ -40,7 +42,8 @@ class IODynamixel:
 		self.running = False
 
 	def ping(self):
-		for DXL_ID in self.motors:
+		for name in self.motors:
+			DXL_ID = motors[name]['id']
 			dxl_model_number, dxl_comm_result, dxl_error = \
 				self.packetHandler.ping(self.portHandler, DXL_ID)
 			if dxl_comm_result != dynamixel_sdk.COMM_SUCCESS:
@@ -71,9 +74,12 @@ class IODynamixel:
 			return False
 
 motors = {
-		'abs_z':{'id':33, 'type':'MX-28'}
+		'abs_z':{'id':33, 'type':'MX-28'},
+		'bust_y':{'id':34, 'type':'RX-28-28'},
 		}
-motors = [33, 34, 35, 36, 37, 41, 42, 43, 44, 51, 52, 53, 54]
+# motors = [33, 34, 35, 36, 37, 41, 42, 43, 44, 51, 52, 53, 54]
+
+# echo 1 > /sys/bus/usb-serial/devices/ttyUSB0/latency_timer
 
 dxl = IODynamixel(motors=motors, freq=10)
 dxl.start()
