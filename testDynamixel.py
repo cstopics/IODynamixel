@@ -44,8 +44,10 @@ class IODynamixel:
 		self.testTime = time.time()
 		self.sendTorque = False
 		self.playing = False
+		self.recording = False
 		self.movement = []
 		self.playFrame = 0
+		self.motorsToRec = []
 		# Initialize PortHandler instance
 		self.portHandler = dynamixel_sdk.PortHandler(self.port)
 		# Initialize PacketHandler instance
@@ -161,6 +163,17 @@ class IODynamixel:
 					self.motors[name]['robotAngle'] = self.motors[name]['motorAngle'] - self.motors[name]['offset']
 			# print("ID="+str(DXL_ID)+" POS="+str(dxl_present_position))
 
+	def _playMovement(self):
+		for motor in self.movement['data']:
+			self.motors[motor]['robotGoal'] = self.movement['data'][motor][self.playFrame]
+		self.playFrame += 1
+		if self.playFrame >= len(self.movement['data'][list(self.movement['data'].keys())[0]]):
+			self.playing = False
+
+	def _recordMovement(self):
+		for motor in self.motorsToRec:
+			self.movement['data'][motor].append(self.motors[motor]['robotAngle'])
+
 	def txrx(self):
 		if self.threadOn:
 			#print('Warning: Thread is not running at ' + str(self.freq) + ' FPS')
@@ -172,13 +185,11 @@ class IODynamixel:
 		# print(1/(time.time() - self.testTime))
 		self.testTime = time.time()
 		if self.playing:
-			for motor in self.movement['data']:
-				self.motors[motor]['robotGoal'] = self.movement['data'][motor][self.playFrame]
-			self.playFrame += 1
-			if self.playFrame >= len(self.movement['data'][list(rec1['data'].keys())[0]]):
-				self.playing = False
+			self._playMovement()
 		self.tx()
 		self.rx()
+		if self.recording:
+			self._recordMovement()
 		self.threadOn = False
 		
 
@@ -241,12 +252,52 @@ class IODynamixel:
 			self.motors[name]['robotGoal'] = int(angle[i])
 
 	def playMovement(self, movement):
-		if not self.playing:
+		if self.playing:
+			print('Error: Currently running other movement')
+			return
+		if self.recording:
+			print('Error: Currently recording movement')
+			return
+		else:
+			print('Starting playing movement...')
 			self.movement = movement.copy()
 			self.playFrame = 0
 			self.playing = True
-		else:
+
+	def recordMovement(self, motors, block=''):
+		if self.playing:
 			print('Error: Currently running other movement')
+			return
+		if self.recording:
+			print('Error: Currently recording movement')
+			return
+		else:
+			print('Starting recording movement...')
+			self.motorsToRec = motors.copy()
+			self.disableTorque(self.motorsToRec)
+			self.movement = {'fps': 40, 'data': {}}
+			for motor in self.motorsToRec:
+				self.movement['data'][motor]=[]
+			self.recording = True
+
+	def stopRecording(self):
+		self.recording = False
+		return self.movement.copy()
+
+	def setMovementInit(self, movement):
+		for motor in movement['data']:
+				self.motors[motor]['robotGoal'] = self.movement['data'][motor][0]
+
+	def saveMovement(self, movement, file_name):
+		with open(file_name + '.json', 'w') as file:
+			json.dump(movement, file)
+
+	def loadMovement(self, file_name):
+		with open(file_name + '.json') as file:
+			return json.load(file)
+		return -1
+
+##################
 
 
 dxl = IODynamixel(json_file="motor_definitions.json", freq=40)
@@ -276,8 +327,20 @@ rec1 = {'fps':40,
 dxl.start()
 dxl.enableTorque(dxl.get_motor_names())
 
-time.sleep(2)
+# dxl.recordMovement(dxl.get_motor_names())
 
-dxl.playMovement(rec1)
+
+# dxl.recordMovement(['r_elbow_y', 'r_arm_z', 'r_shoulder_x', 'r_shoulder_y', 'l_elbow_y', 'l_arm_z', 'l_shoulder_x', 'l_shoulder_y', 'abs_z'])
+
+#time.sleep(2)
+
+#dxl.playMovement(rec1)
+
+# dxl.recordMovement(['r_elbow_y', 'r_arm_z', 'r_shoulder_x', 'r_shoulder_y'])
+
+# dxl.recordMovement(['r_shoulder_y'])
+# y = dxl.stopRecording()
+# y = dxl.loadMovement('test1')
+# dxl.playMovement(y)
 
 # echo 1 > /sys/bus/usb-serial/devices/ttyUSB0/latency_timer
