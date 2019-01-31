@@ -7,14 +7,18 @@ import json
 
 import signal
 import sys
+import numpy as np
+import matplotlib.pyplot as plt
+
 
 class IODynamixel:
-	"Library to control Dynamixel motors"
-
+	""""Library to control Dynamixel motors"""
 	ADDR_MX_TORQUE_ENABLE = 24
 	LEN_MX_TORQUE_ENABLE = 1
-	ADDR_MX_GOALPOS_ENABLE = 30
-	LEN_MX_GOALPOS_ENABLE = 2
+	ADDR_MX_GOAL_POSITION = 30
+	LEN_MX_GOAL_POSITION = 2
+	ADDR_MX_MOVING_SPEED = 32
+	LEN_MX_MOVING_SPEED = 2
 	ADDR_MX_PRESENT_POSITION = 36
 
 	def __init__(self, json_file, freq=50, port='/dev/ttyUSB0', baudrate=1000000, protocol=1.0, debug=True):
@@ -28,6 +32,7 @@ class IODynamixel:
 			self.motors[motor]['goalPosition'] = int(-1)
 			self.motors[motor]['motorGoal'] = float('nan')
 			self.motors[motor]['robotGoal'] = self.motors[motor]['initPos']
+			self.motors[motor]['movingSpeed'] = int(200)
 		self.freq = freq
 		self.period = 1/self.freq
 		self.port = port
@@ -38,6 +43,9 @@ class IODynamixel:
 		self.threadOn = False
 		self.testTime = time.time()
 		self.sendTorque = False
+		self.playing = False
+		self.movement = []
+		self.playFrame = 0
 		# Initialize PortHandler instance
 		self.portHandler = dynamixel_sdk.PortHandler(self.port)
 		# Initialize PacketHandler instance
@@ -52,16 +60,32 @@ class IODynamixel:
 		self.groupSyncTorque = dynamixel_sdk.GroupSyncWrite(\
 			self.portHandler, self.packetHandler, \
 			IODynamixel.ADDR_MX_TORQUE_ENABLE, IODynamixel.LEN_MX_TORQUE_ENABLE)
-		self.groupSyncGoalPos = dynamixel_sdk.GroupSyncWrite(\
-			self.portHandler, self.packetHandler, \
-			IODynamixel.ADDR_MX_GOALPOS_ENABLE, IODynamixel.LEN_MX_GOALPOS_ENABLE)
 		for motor in self.motors:
 			self.groupSyncTorque.addParam(self.motors[motor]['id'], [0])
 		self.groupSyncTorque.txPacket()
-			
+
+		self.groupSyncGoalPos = dynamixel_sdk.GroupSyncWrite(\
+			self.portHandler, self.packetHandler, \
+			IODynamixel.ADDR_MX_GOAL_POSITION, IODynamixel.LEN_MX_GOAL_POSITION)
+		
+		self.groupSyncMovSpeed = dynamixel_sdk.GroupSyncWrite(\
+			self.portHandler, self.packetHandler, \
+			IODynamixel.ADDR_MX_MOVING_SPEED, IODynamixel.LEN_MX_MOVING_SPEED)
+		for motor in self.motors:
+			self.groupSyncMovSpeed.addParam(self.motors[motor]['id'], [0, 0])
+		self.syncWriteMovingSpeed()
 
 		#self.syncWriteTorque()
 		#self.groupSyncWrite = dynamixel_sdk.GroupSyncWrite(self.portHandler, self.packetHandler, ADDR_MX_GOAL_POSITION, LEN_MX_GOAL_POSITION)
+
+	def syncWriteMovingSpeed(self):
+		for motor in self.motors:
+			param_goal_position = \
+				[dynamixel_sdk.DXL_LOBYTE(dynamixel_sdk.DXL_LOWORD(self.motors[motor]['movingSpeed'])), \
+				dynamixel_sdk.DXL_HIBYTE(dynamixel_sdk.DXL_LOWORD(self.motors[motor]['movingSpeed'])) \
+				]
+			self.groupSyncMovSpeed.changeParam(self.motors[motor]['id'], param_goal_position)
+		self.groupSyncMovSpeed.txPacket()
 
 	def syncWriteTorque(self):
 		for motor in self.motors:
@@ -80,25 +104,7 @@ class IODynamixel:
 				self.groupSyncGoalPos.addParam(self.motors[motor]['id'], param_goal_position)
 		self.groupSyncGoalPos.txPacket()
 
-	def enableTorque(self, names):
-		for name in names:
-			self.motors[name]['torqueEnable'] = int(1)
-		self.sendTorque = True
-
-	def disableTorque(self, names):
-		for name in names:
-			self.motors[name]['torqueEnable'] = int(0)
-		self.sendTorque = True
-
-	def txrx(self):
-		while(self.threadOn):
-			pass
-		self.threadOn = True
-		if self.running:
-			Timer(self.period, self.txrx).start()
-		# print(1/(time.time() - self.testTime))
-		self.testTime = time.time()
-		# TX
+	def tx(self):
 		for motor in self.motors:
 			if self.motors[motor]['invert']:
 				self.motors[motor]['motorGoal'] = \
@@ -125,7 +131,8 @@ class IODynamixel:
 		if self.sendTorque:
 			self.syncWriteTorque()
 			self.sendTorque = False
-		# RX
+
+	def rx(self):
 		for name in self.motors:
 			DXL_ID = self.motors[name]['id']
 			dxl_present_position, dxl_comm_result, dxl_error = \
@@ -153,6 +160,25 @@ class IODynamixel:
 				else:
 					self.motors[name]['robotAngle'] = self.motors[name]['motorAngle'] - self.motors[name]['offset']
 			# print("ID="+str(DXL_ID)+" POS="+str(dxl_present_position))
+
+	def txrx(self):
+		if self.threadOn:
+			#print('Warning: Thread is not running at ' + str(self.freq) + ' FPS')
+			while(self.threadOn):
+				pass
+		self.threadOn = True
+		if self.running:
+			Timer(self.period, self.txrx).start()
+		# print(1/(time.time() - self.testTime))
+		self.testTime = time.time()
+		if self.playing:
+			for motor in self.movement['data']:
+				self.motors[motor]['robotGoal'] = self.movement['data'][motor][self.playFrame]
+			self.playFrame += 1
+			if self.playFrame >= len(self.movement['data'][list(rec1['data'].keys())[0]]):
+				self.playing = False
+		self.tx()
+		self.rx()
 		self.threadOn = False
 		
 
@@ -195,17 +221,63 @@ class IODynamixel:
 			print("Failed opening the port")
 			return False
 
+	# USER INTERFACE
+
+	def get_motor_names(self):
+		return list(self.motors.keys())
+
+	def enableTorque(self, names):
+		for name in names:
+			self.motors[name]['torqueEnable'] = int(1)
+		self.sendTorque = True
+
+	def disableTorque(self, names):
+		for name in names:
+			self.motors[name]['torqueEnable'] = int(0)
+		self.sendTorque = True
+
+	def setAngle(self, names, angle):
+		for i, name in enumerate(names):
+			self.motors[name]['robotGoal'] = int(angle[i])
+
+	def playMovement(self, movement):
+		if not self.playing:
+			self.movement = movement.copy()
+			self.playFrame = 0
+			self.playing = True
+		else:
+			print('Error: Currently running other movement')
+
+
+dxl = IODynamixel(json_file="motor_definitions.json", freq=40)
+
 def signal_handler(sig, frame):
-        dxl.stop()
-        sys.exit(0)
+		#dxl.disableTorque(dxl.get_motor_names())
+		dxl.stop()
+		sys.exit(0)
 
 signal.signal(signal.SIGINT, signal_handler)
 
-dxl = IODynamixel(json_file="motor_definitions.json", freq=40)
+y = list(20*np.sin(np.linspace(0, 2*np.pi, num=80)))
+
+rec1 = {'fps':40,
+		'data':{
+			'r_elbow_y':list(20*np.sin(np.linspace(0, 2*np.pi, num=80))),
+			'r_arm_z':list(10*np.cos(np.linspace(0, 2*np.pi, num=80))),
+			'l_elbow_y':list(20*np.sin(np.linspace(0, 2*np.pi, num=80))),
+			'l_arm_z':list(10*np.cos(np.linspace(0, 2*np.pi, num=80)))
+			}
+		}
+
 
 #while(True):
 #	dxl.txrx()
 
 dxl.start()
+dxl.enableTorque(dxl.get_motor_names())
+
+time.sleep(2)
+
+dxl.playMovement(rec1)
 
 # echo 1 > /sys/bus/usb-serial/devices/ttyUSB0/latency_timer
