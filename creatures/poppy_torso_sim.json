@@ -1,0 +1,15 @@
+{
+	"abs_z": 		{"id":33, "type": "MX-28", "initPos": 0, "offset":0, "invert":true}, 
+	"bust_y": 		{"id":34, "type": "RX-28", "initPos": 0, "offset":0, "invert":false}, 
+	"bust_x": 		{"id":35, "type": "RX-28", "initPos": 0, "offset":0, "invert":true}, 
+	"head_z": 		{"id":36, "type": "AX-12", "initPos": 0, "offset":0, "invert":true}, 
+	"head_y": 		{"id":37, "type": "AX-12", "initPos": 0, "offset":-20, "invert":false}, 
+	"l_shoulder_y": {"id":41, "type": "RX-28", "initPos": 0, "offset":90, "invert":true}, 
+	"l_shoulder_x": {"id":42, "type": "RX-28", "initPos": 0, "offset":90, "invert":true}, 
+	"l_arm_z": 		{"id":43, "type": "RX-28", "initPos": 0, "offset":0, "invert":true}, 
+	"l_elbow_y": 	{"id":44, "type": "RX-28", "initPos": 0, "offset":-90, "invert":true}, 
+	"r_shoulder_y": {"id":51, "type": "MX-28", "initPos": 0, "offset":-90, "invert":false}, 
+	"r_shoulder_x": {"id":52, "type": "MX-28", "initPos": 0, "offset":-90, "invert":false}, 
+	"r_arm_z": 		{"id":53, "type": "MX-28", "initPos": 0, "offset":0, "invert":false}, 
+	"r_elbow_y": 	{"id":54, "type": "MX-28", "initPos": 0, "offset":90, "invert":false}
+}

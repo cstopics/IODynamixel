@@ -1,5 +1,6 @@
 import serial
 from threading import Thread, Timer, Lock
+from vrep import vrep
 import time
 import numpy as np
 import dynamixel_sdk
@@ -15,9 +16,13 @@ class IODynamixel:
     LEN_MX_MOVING_SPEED = 2
     ADDR_MX_PRESENT_POSITION = 36
 
-    def __init__(self, json_file, freq=50, port='/dev/ttyUSB0', baudrate=1000000, protocol=1.0):
+    def __init__(self, creature, freq=40, port='/dev/ttyUSB0', baudrate=1000000, protocol=1.0,
+                 simulator='none'):
+        """simulators: none, vrep"""
         self.correct = False
-        with open(json_file) as f:
+        self.simulator = simulator
+        self.simulate = False if self.simulator == 'none' else True
+        with open(creature) as f:
             self.motors = json.load(f)
         for motor in self.motors:
             self.motors[motor]['currentPosition'] = int(-1)
@@ -28,6 +33,8 @@ class IODynamixel:
             self.motors[motor]['motorGoal'] = float('nan')
             self.motors[motor]['robotGoal'] = self.motors[motor]['initPos']
             self.motors[motor]['movingSpeed'] = int(200)
+            if self.simulator == 'vrep':
+                self.motors[motor]['vrep_handler'] = 0
         self.freq = freq
         self.period = 1/self.freq
         self.port = port
@@ -43,34 +50,52 @@ class IODynamixel:
         self.playFrame = 0
         self.motorsToRec = []
         self.lockPlaying = Lock()
-        # Initialize PortHandler instance
-        self.portHandler = dynamixel_sdk.PortHandler(self.port)
-        # Initialize PacketHandler instance
-        self.packetHandler = dynamixel_sdk.PacketHandler(self.protocol)
+        if self.simulator=='none':
+            # Initialize PortHandler instance
+            self.portHandler = dynamixel_sdk.PortHandler(self.port)
+            # Initialize PacketHandler instance
+            self.packetHandler = dynamixel_sdk.PacketHandler(self.protocol)
+            if not self.openPort():
+                return
+            if not self.ping():
+                return
+            # Initialize GroupSyncWrite instances
+            self.groupSyncTorque = dynamixel_sdk.GroupSyncWrite(\
+                self.portHandler, self.packetHandler, \
+                IODynamixel.ADDR_MX_TORQUE_ENABLE, IODynamixel.LEN_MX_TORQUE_ENABLE)
+            for motor in self.motors:
+                self.groupSyncTorque.addParam(self.motors[motor]['id'], [0])
+            self.groupSyncTorque.txPacket()
 
-        if not self.openPort():
+            self.groupSyncGoalPos = dynamixel_sdk.GroupSyncWrite(\
+                self.portHandler, self.packetHandler, \
+                IODynamixel.ADDR_MX_GOAL_POSITION, IODynamixel.LEN_MX_GOAL_POSITION)
+            
+            self.groupSyncMovSpeed = dynamixel_sdk.GroupSyncWrite(\
+                self.portHandler, self.packetHandler, \
+                IODynamixel.ADDR_MX_MOVING_SPEED, IODynamixel.LEN_MX_MOVING_SPEED)
+            for motor in self.motors:
+                self.groupSyncMovSpeed.addParam(self.motors[motor]['id'], [0, 0])
+            self.syncWriteMovingSpeed()
+        elif self.simulator=='vrep':
+            vrep.simxFinish(-1)
+            self.clientID = vrep.simxStart('127.0.0.1',19997,True,True,500,5)
+            if self.clientID==-1:
+                print("Error: Not connected to remote API server")
+                return
+            ret = 0
+            ret += vrep.simxLoadScene(self.clientID, './creatures/poppy_torso_sim.ttt', 1, vrep.simx_opmode_blocking)
+            # ret += vrep.simxStartSimulation(self.clientID, vrep.simx_opmode_blocking)
+            for motor in self.motors:
+                ret0, handler = vrep.simxGetObjectHandle(self.clientID, motor, vrep.simx_opmode_blocking)
+                self.motors[motor]['vrep_handler'] = handler
+                ret += ret0
+            if ret != 0:
+                print("Error: Error with the remote API server")
+                return
+        else:
+            print("Error: Simulator '" + self.simulator + "' not recognized.")
             return
-        if not self.ping():
-            return
-
-        # Initialize GroupSyncWrite instances
-        self.groupSyncTorque = dynamixel_sdk.GroupSyncWrite(\
-            self.portHandler, self.packetHandler, \
-            IODynamixel.ADDR_MX_TORQUE_ENABLE, IODynamixel.LEN_MX_TORQUE_ENABLE)
-        for motor in self.motors:
-            self.groupSyncTorque.addParam(self.motors[motor]['id'], [0])
-        self.groupSyncTorque.txPacket()
-
-        self.groupSyncGoalPos = dynamixel_sdk.GroupSyncWrite(\
-            self.portHandler, self.packetHandler, \
-            IODynamixel.ADDR_MX_GOAL_POSITION, IODynamixel.LEN_MX_GOAL_POSITION)
-        
-        self.groupSyncMovSpeed = dynamixel_sdk.GroupSyncWrite(\
-            self.portHandler, self.packetHandler, \
-            IODynamixel.ADDR_MX_MOVING_SPEED, IODynamixel.LEN_MX_MOVING_SPEED)
-        for motor in self.motors:
-            self.groupSyncMovSpeed.addParam(self.motors[motor]['id'], [0, 0])
-        self.syncWriteMovingSpeed()
 
         self.correct = True
 
@@ -123,39 +148,59 @@ class IODynamixel:
                     self.motors[motor]['goalPosition'] = 0
                 elif self.motors[motor]['goalPosition'] > 1023:
                     self.motors[motor]['goalPosition'] = 1023
-        self.syncWriteGoalPos()
-        if self.sendTorque:
-            self.syncWriteTorque()
-            self.sendTorque = False
+        if not self.simulate:
+            self.syncWriteGoalPos()
+            if self.sendTorque:
+                self.syncWriteTorque()
+                self.sendTorque = False
+        elif self.simulator == 'vrep':
+            for motor in self.motors:
+                ret = vrep.simxSetJointTargetPosition(self.clientID, 
+                    self.motors[motor]['vrep_handler'], 
+                    np.radians(self.motors[motor]['motorGoal']), vrep.simx_opmode_streaming)
 
     def rx(self):
-        for name in self.motors:
-            DXL_ID = self.motors[name]['id']
+        for motor in self.motors:
+            DXL_ID = self.motors[motor]['id']
             dxl_present_position, dxl_comm_result, dxl_error = \
                 self.packetHandler.read2ByteTxRx(self.portHandler, DXL_ID, IODynamixel.ADDR_MX_PRESENT_POSITION)
             if dxl_comm_result != dynamixel_sdk.COMM_SUCCESS:
-                self.motors[name]['currentPosition'] = float('nan')
-                self.motors[name]['motorAngle'] = float('nan')
+                self.motors[motor]['currentPosition'] = float('nan')
+                self.motors[motor]['motorAngle'] = float('nan')
                 # print("%s" % packetHandler.getTxRxResult(dxl_comm_result))
             elif dxl_error != 0:
-                self.motors[name]['currentPosition'] = float('nan')
-                self.motors[name]['motorAngle'] = float('nan')
+                self.motors[motor]['currentPosition'] = float('nan')
+                self.motors[motor]['motorAngle'] = float('nan')
                 # print("%s" % packetHandler.getRxPacketError(dxl_error))
             else: 
-                self.motors[name]['currentPosition'] = float(dxl_present_position)
+                self.motors[motor]['currentPosition'] = float(dxl_present_position)
 
-                if self.motors[name]['type'] == "MX-28":
-                    self.motors[name]['motorAngle'] = float(dxl_present_position)*360.0/4096.0 - 180.0
-                elif self.motors[name]['type'] == "RX-28" or self.motors[name]['type'] == "AX-12":
-                    self.motors[name]['motorAngle'] = float(dxl_present_position)*300.0/1024.0 - 150.0
+                if self.motors[motor]['type'] == "MX-28":
+                    self.motors[motor]['motorAngle'] = float(dxl_present_position)*360.0/4096.0 - 180.0
+                elif self.motors[motor]['type'] == "RX-28" or self.motors[motor]['type'] == "AX-12":
+                    self.motors[motor]['motorAngle'] = float(dxl_present_position)*300.0/1024.0 - 150.0
                 else:
-                    self.motors[name]['motorAngle'] = float('nan')
+                    self.motors[motor]['motorAngle'] = float('nan')
 
-                if self.motors[name]['invert']:
-                    self.motors[name]['robotAngle'] = -(self.motors[name]['motorAngle'] - self.motors[name]['offset'])
+                if self.motors[motor]['invert']:
+                    self.motors[motor]['robotAngle'] = -(self.motors[motor]['motorAngle'] - self.motors[motor]['offset'])
                 else:
-                    self.motors[name]['robotAngle'] = self.motors[name]['motorAngle'] - self.motors[name]['offset']
-            # print("ID="+str(DXL_ID)+" POS="+str(dxl_present_position))
+                    self.motors[motor]['robotAngle'] = self.motors[motor]['motorAngle'] - self.motors[motor]['offset']
+
+    def rx_sim(self):
+        for motor in self.motors:
+            ret, pos = vrep.simxGetJointPosition(self.clientID, self.motors[motor]['vrep_handler'],
+                                      vrep.simx_opmode_streaming)
+            self.motors[motor]['currentPosition'] = float('nan')
+            if ret != 0:
+                self.motors[motor]['motorAngle'] = float('nan')
+            else:
+                self.motors[motor]['motorAngle'] = np.degrees(pos)
+
+                if self.motors[motor]['invert']:
+                    self.motors[motor]['robotAngle'] = -(self.motors[motor]['motorAngle'] - self.motors[motor]['offset'])
+                else:
+                    self.motors[motor]['robotAngle'] = self.motors[motor]['motorAngle'] - self.motors[motor]['offset']
 
     def _playMovement(self):
         for motor in self.movement['data']:
@@ -182,7 +227,10 @@ class IODynamixel:
         if self.playing:
             self._playMovement()
         self.tx()
-        self.rx()
+        if self.simulate:
+            self.rx_sim()
+        else:
+            self.rx()
         if self.recording:
             self._recordMovement()
         self.threadOn = False
@@ -190,6 +238,10 @@ class IODynamixel:
 
     def start(self):
         self.running = True
+        if self.simulator == 'vrep':
+            ret = vrep.simxStartSimulation(self.clientID, vrep.simx_opmode_blocking)
+            if ret != 0:
+                print('Error: Could not start simulation')
         Timer(self.period, self.txrx).start()
 
     def stop(self):
@@ -211,13 +263,17 @@ class IODynamixel:
         return True
 
     def openPort(self):
-        if self.portHandler.openPort():
-            if not self.portHandler.setBaudRate(self.baudrate):
-                print("Error: Failed changing the baudrate")
+        try:
+            if self.portHandler.openPort():
+                if not self.portHandler.setBaudRate(self.baudrate):
+                    print("Error: Failed changing the baudrate of the port " + self.port)
+                    return False
+                return True
+            else:
+                print("Error: Failed opening the port "  + self.port)
                 return False
-            return True
-        else:
-            print("Error: Failed opening the port")
+        except:
+            print("Error: Port "  + self.port + ' not found')
             return False
 
     # USER INTERFACE
@@ -291,34 +347,33 @@ class IODynamixel:
             return json.load(file)
         return -1
 
+# if __name__ == "__main__":
+#     import signal
+#     import sys
+#     import numpy as np
 
-if __name__ == "__main__":
-    import signal
-    import sys
-    import numpy as np
+#     dxl = IODynamixel(creature="creatures/poppy_torso.json")
+#     if not dxl.correct:
+#         print('Error creating IODynamixel object')
+#         sys.exit()
 
-    dxl = IODynamixel(json_file="creatures/poppy_torso.json", freq=40)
-    if not dxl.correct:
-        print('Error creating IODynamixel object')
-        sys.exit()
+#     def signal_handler(sig, frame):
+#             #dxl.disableTorque(dxl.get_motor_names())
+#             dxl.stop()
+#             sys.exit(0)
 
-    def signal_handler(sig, frame):
-            #dxl.disableTorque(dxl.get_motor_names())
-            dxl.stop()
-            sys.exit(0)
+#     signal.signal(signal.SIGINT, signal_handler)
 
-    signal.signal(signal.SIGINT, signal_handler)
+#     y = list(20*np.sin(np.linspace(0, 2*np.pi, num=80)))
 
-    y = list(20*np.sin(np.linspace(0, 2*np.pi, num=80)))
-
-    rec1 = {'fps':40,
-            'data':{
-                'r_elbow_y':list(20*np.sin(np.linspace(0, 2*np.pi, num=80))),
-                'r_arm_z':list(10*np.cos(np.linspace(0, 2*np.pi, num=80))),
-                'l_elbow_y':list(20*np.sin(np.linspace(0, 2*np.pi, num=80))),
-                'l_arm_z':list(10*np.cos(np.linspace(0, 2*np.pi, num=80)))
-                }
-            }
+#     rec1 = {'fps':40,
+#             'data':{
+#                 'r_elbow_y':list(20*np.sin(np.linspace(0, 2*np.pi, num=80))),
+#                 'r_arm_z':list(10*np.cos(np.linspace(0, 2*np.pi, num=80))),
+#                 'l_elbow_y':list(20*np.sin(np.linspace(0, 2*np.pi, num=80))),
+#                 'l_arm_z':list(10*np.cos(np.linspace(0, 2*np.pi, num=80)))
+#                 }
+#             }
     
-    dxl.start()
-    dxl.enableTorque(dxl.get_motor_names())
+#     dxl.start()
+#     dxl.enableTorque(dxl.get_motor_names())
