@@ -2,7 +2,18 @@
 
 Library to control Dynamixel motors vía *creature* scheme.
 
-## Setting up the USB port
+## Dependencies
+
+Pip dependencies:
+
+* pyserial (for real robot)
+* dynamixel_sdk (for real robot) (https://github.com/ROBOTIS-GIT/DynamixelSDK)
+
+Other software:
+
+* V-rep (for simulation)
+
+## USB port configuration (for testing with real robot)
 
 This library was tested with the *U2D2* controller (*Robotis*). In order to reach good update frequencies, it is necesary to reduce the latency delay, as follows:
 
@@ -11,6 +22,10 @@ $ sudo su
 # echo 1 > /sys/bus/usb-serial/devices/ttyUSB0/latency_timer
 # exit
 ```
+
+## V-rep configuration
+
+...
 
 ## Testing
 
