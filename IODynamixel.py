@@ -6,8 +6,10 @@ import numpy as np
 import dynamixel_sdk
 import json
 
+"""IODynamixel: Package to control dynamixel motors"""
+
 class IODynamixel:
-    """"Library to control Dynamixel motors"""
+    """IODynamixel controller"""
     ADDR_MX_TORQUE_ENABLE = 24
     LEN_MX_TORQUE_ENABLE = 1
     ADDR_MX_GOAL_POSITION = 30
@@ -338,14 +340,15 @@ class IODynamixel:
         for motor in movement['data']:
                 self.motors[motor]['robotGoal'] = self.movement['data'][motor][0]
 
-    def saveMovement(self, movement, file_name):
+    def saveMovement(self, movement: dict, file_name: str):
+
         with open(file_name, 'w') as file:
             json.dump(movement, file)
 
-    def loadMovement(self, file_name):
+    def loadMovement(self, file_name: str) -> dict:
         with open(file_name) as file:
             return json.load(file)
-        return -1
+        return {}
 
 # if __name__ == "__main__":
 #     import signal

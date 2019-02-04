@@ -1,13 +1,12 @@
-import sys
+import numpy as np
+from IODynamixel import IODynamixel
 
+x = np.degrees()
 
-# Set the interpreter bool
-try:
-    if sys.ps1: interpreter = True
-except AttributeError:
-    interpreter = False
-    if sys.flags.interactive: interpreter = True
+dxl = IODynamixel()
 
-# Use the interpreter bool
-if interpreter: print('We are in the Interpreter')
-else: print('We are running from the command line')
+dxl.loadMovement(5)
+
+x = {x:"5"}
+
+dxl.saveMovement(x,'A')
