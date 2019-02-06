@@ -1,6 +1,7 @@
 import serial
+import os
 from threading import Thread, Timer, Lock
-from vrep import vrep
+from .vrep import vrep
 import time
 import numpy as np
 import dynamixel_sdk
@@ -24,7 +25,11 @@ class IODynamixel:
         self.correct = False
         self.simulator = simulator
         self.simulate = False if self.simulator == 'none' else True
-        with open(creature) as f:
+        if creature[-5:]!='.json':
+            print("Error: Incorrect creature file extension.")
+            return
+        self.creatureJson = creature.format(os.path.dirname(os.path.realpath(__file__)))
+        with open(self.creatureJson) as f:
             self.motors = json.load(f)
         for motor in self.motors:
             self.motors[motor]['currentPosition'] = int(-1)
@@ -86,7 +91,8 @@ class IODynamixel:
                 print("Error: Not connected to remote API server")
                 return
             ret = 0
-            ret += vrep.simxLoadScene(self.clientID, './creatures/poppy_torso_sim.ttt', 1, vrep.simx_opmode_blocking)
+            fileName = self.creatureJson[:-4]+'ttt'
+            ret += vrep.simxLoadScene(self.clientID, fileName, 1, vrep.simx_opmode_blocking)
             # ret += vrep.simxStartSimulation(self.clientID, vrep.simx_opmode_blocking)
             for motor in self.motors:
                 ret0, handler = vrep.simxGetObjectHandle(self.clientID, motor, vrep.simx_opmode_blocking)
@@ -98,6 +104,9 @@ class IODynamixel:
         else:
             print("Error: Simulator '" + self.simulator + "' not recognized.")
             return
+
+        self.callbackPre = []
+        self.callbackPost = []
 
         self.correct = True
 
@@ -226,6 +235,10 @@ class IODynamixel:
             Timer(self.period, self.txrx).start()
         # print(1/(time.time() - self.testTime))
         self.testTime = time.time()
+
+        if self.callbackPre != []:
+            self.callbackPre(self.motors)
+
         if self.playing:
             self._playMovement()
         self.tx()
@@ -235,6 +248,10 @@ class IODynamixel:
             self.rx()
         if self.recording:
             self._recordMovement()
+
+        if self.callbackPost != []:
+            self.callbackPost(self.motors)
+
         self.threadOn = False
         
 
@@ -309,7 +326,6 @@ class IODynamixel:
             self.movement = movement.copy()
             self.playFrame = 0
             self.playing = True
-            print('jajaja')
 
     def playMovementBlock(self, movement):
         self.playMovement(movement)
@@ -340,15 +356,23 @@ class IODynamixel:
         for motor in movement['data']:
                 self.motors[motor]['robotGoal'] = self.movement['data'][motor][0]
 
-    def saveMovement(self, movement: dict, file_name: str):
+    #def saveMovement(self, movement: dict, file_name: str):
+    def saveMovement(self, movement, file_name):
 
         with open(file_name, 'w') as file:
             json.dump(movement, file)
 
-    def loadMovement(self, file_name: str) -> dict:
+    #def loadMovement(self, file_name: str) -> dict:
+    def loadMovement(self, file_name):
         with open(file_name) as file:
             return json.load(file)
         return {}
+
+    def setCallbackPre(self, callback):
+        self.callbackPre = callback
+
+    def setCallbackPost(self, callback):
+        self.callbackPost = callback
 
 # if __name__ == "__main__":
 #     import signal
