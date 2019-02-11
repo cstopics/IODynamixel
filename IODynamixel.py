@@ -77,7 +77,7 @@ class IODynamixel:
             self.groupSyncGoalPos = dynamixel_sdk.GroupSyncWrite(\
                 self.portHandler, self.packetHandler, \
                 IODynamixel.ADDR_MX_GOAL_POSITION, IODynamixel.LEN_MX_GOAL_POSITION)
-            
+
             self.groupSyncMovSpeed = dynamixel_sdk.GroupSyncWrite(\
                 self.portHandler, self.packetHandler, \
                 IODynamixel.ADDR_MX_MOVING_SPEED, IODynamixel.LEN_MX_MOVING_SPEED)
@@ -166,8 +166,8 @@ class IODynamixel:
                 self.sendTorque = False
         elif self.simulator == 'vrep':
             for motor in self.motors:
-                ret = vrep.simxSetJointTargetPosition(self.clientID, 
-                    self.motors[motor]['vrep_handler'], 
+                ret = vrep.simxSetJointTargetPosition(self.clientID,
+                    self.motors[motor]['vrep_handler'],
                     np.radians(self.motors[motor]['motorGoal']), vrep.simx_opmode_streaming)
 
     def rx(self):
@@ -183,7 +183,7 @@ class IODynamixel:
                 self.motors[motor]['currentPosition'] = float('nan')
                 self.motors[motor]['motorAngle'] = float('nan')
                 # print("%s" % packetHandler.getRxPacketError(dxl_error))
-            else: 
+            else:
                 self.motors[motor]['currentPosition'] = float(dxl_present_position)
 
                 if self.motors[motor]['type'] == "MX-28":
@@ -253,7 +253,7 @@ class IODynamixel:
             self.callbackPost(self.motors)
 
         self.threadOn = False
-        
+
 
     def start(self):
         self.running = True
@@ -374,6 +374,28 @@ class IODynamixel:
     def setCallbackPost(self, callback):
         self.callbackPost = callback
 
+    def interpolate(self, route):
+        period = 1/self.freq
+        times = np.array(route['times'])
+        times_new = np.arange(times.min(), times.max()+period, period)
+        movement = {}
+        movement['fps'] = self.freq
+        movement['data'] = {}
+        for motor in route['motors']:
+            if motor=='r_shoulder_x':
+                data = np.degrees(-np.interp(times_new, times, np.array(route['motors'][motor])))
+            else:
+                data = np.degrees(np.interp(times_new, times, np.array(route['motors'][motor])))
+            if self.motors[motor]['invert']:
+                movement['data'][motor] = list(-(data - self.motors[motor]['offset']))
+            else:
+                movement['data'][motor] = list(data - self.motors[motor]['offset'])
+
+            #movement['data'][motor] = list(np.degrees(np.interp(times_new, times, np.array(route['motors'][motor]))))
+
+
+        return movement
+
 # if __name__ == "__main__":
 #     import signal
 #     import sys
@@ -401,6 +423,6 @@ class IODynamixel:
 #                 'l_arm_z':list(10*np.cos(np.linspace(0, 2*np.pi, num=80)))
 #                 }
 #             }
-    
+
 #     dxl.start()
 #     dxl.enableTorque(dxl.get_motor_names())
