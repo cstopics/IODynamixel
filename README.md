@@ -2,6 +2,8 @@
 
 Library to control Dynamixel motors vía *creature* scheme.
 
+Do not forget to visit our web page: https://cstopics.github.io/cstopics/
+
 ## Dependencies
 
 * Python >= 3.5
