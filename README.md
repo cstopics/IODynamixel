@@ -104,6 +104,7 @@ Move motors to specific angle:
 Load predefined movement and play it ({} means the library path):
 ``` python
 >>> mov1 = dxl.loadMovement('{}/movements/saludo.json')
+>>> dxl.setMovementInit(mov1) # Go to the initial position of the movement.
 >>> dxl.playMovement(mov1)
 ```
 Play movement and wait until it finishes:
@@ -113,6 +114,8 @@ Play movement and wait until it finishes:
 Record, save and play custom movement (only with real robot):
 ``` python
 >>> mov2 = dxl.recordMovement(['r_shoulder_y', 'r_elbow_y', 'r_shoulder_x', 'r_arm_z'])
+>>> # Move the selected joints as you want.
+>>> dxl.stopRecording()
 >>> dxl.saveMovement(mov2, '{path to the output json file, including the extension}')
 >>> dxl.playMovementBlock(mov2)
 ```
