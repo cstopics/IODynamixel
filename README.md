@@ -122,4 +122,9 @@ Record, save and play custom movement (only with real robot):
 >>> dxl.playMovementBlock(mov2)
 ```
 
+## Predefined movements
+
+* saludo.json
+* macarena.json
+
 ## Thanks!
