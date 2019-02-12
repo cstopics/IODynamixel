@@ -31,7 +31,7 @@ There are two alternatives to install this library:
 Add the *src* folder to the *PYTHONPATH* enviroment variable:
 
 ``` bash
-$ export export PYTHONPATH="/{working_folder}/IODynamixel/src:$PYTHONPATH"
+$ export PYTHONPATH="/{working_folder}/IODynamixel/src:$PYTHONPATH"
 ```
 You must do it each time you launch a terminal, if you don't want that, you can add this line to your *~/.bashrc* file.
 
