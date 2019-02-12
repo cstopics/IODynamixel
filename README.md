@@ -37,7 +37,11 @@ You must do it each time you launch a terminal, if you don't want that, you can 
 
 **Install the library on your system**
 
-In progress.
+Go to the cloned repository and install it:
+``` bash
+$ cd /{working_folder}/IODynamixel
+$ python setup.py install # Or python3, depending on your system (remember that must be Python >= 3.5)
+```
 
 ## USB port configuration (for testing with real robot)
 
