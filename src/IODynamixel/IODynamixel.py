@@ -1,7 +1,7 @@
 import serial
 import os
 from threading import Thread, Timer, Lock
-from .vrep import vrep
+from vrep import vrep
 import time
 import numpy as np
 import dynamixel_sdk
@@ -19,7 +19,7 @@ class IODynamixel:
     LEN_MX_MOVING_SPEED = 2
     ADDR_MX_PRESENT_POSITION = 36
 
-    def __init__(self, creature, freq=40, port='/dev/ttyUSB0', baudrate=1000000, protocol=1.0,
+    def __init__(self, creature, freq=40.0, port='/dev/ttyUSB0', baudrate=1000000, protocol=1.0,
                  simulator='none'):
         """simulators: none, vrep"""
         self.correct = False
@@ -219,7 +219,10 @@ class IODynamixel:
         self.playFrame += 1
         if self.playFrame >= len(self.movement['data'][list(self.movement['data'].keys())[0]]):
             self.playing = False
-            self.lockPlaying.release()
+            try:
+                self.lockPlaying.release()
+            except:
+                pass
 
     def _recordMovement(self):
         for motor in self.motorsToRec:
@@ -264,6 +267,10 @@ class IODynamixel:
         Timer(self.period, self.txrx).start()
 
     def stop(self):
+        if self.simulator == 'vrep':
+            ret = vrep.simxStopSimulation(self.clientID, vrep.simx_opmode_blocking)
+            if ret != 0:
+                print('Error: Could not stop simulation')
         self.running = False
 
     def ping(self):
@@ -332,7 +339,7 @@ class IODynamixel:
         self.lockPlaying.acquire(False)
         self.lockPlaying.acquire(True)
 
-    def recordMovement(self, motors, block=''):
+    def recordMovement(self, motors):
         if self.playing:
             print('Error: Currently running other movement')
             return
@@ -354,16 +361,16 @@ class IODynamixel:
 
     def setMovementInit(self, movement):
         for motor in movement['data']:
-                self.motors[motor]['robotGoal'] = self.movement['data'][motor][0]
+                self.motors[motor]['robotGoal'] = movement['data'][motor][0]
 
     #def saveMovement(self, movement: dict, file_name: str):
     def saveMovement(self, movement, file_name):
-
         with open(file_name, 'w') as file:
             json.dump(movement, file)
 
     #def loadMovement(self, file_name: str) -> dict:
     def loadMovement(self, file_name):
+        file_name = file_name.format(os.path.dirname(os.path.realpath(__file__)))
         with open(file_name) as file:
             return json.load(file)
         return {}
@@ -390,39 +397,6 @@ class IODynamixel:
                 movement['data'][motor] = list(-(data - self.motors[motor]['offset']))
             else:
                 movement['data'][motor] = list(data - self.motors[motor]['offset'])
-
             #movement['data'][motor] = list(np.degrees(np.interp(times_new, times, np.array(route['motors'][motor]))))
-
-
         return movement
 
-# if __name__ == "__main__":
-#     import signal
-#     import sys
-#     import numpy as np
-
-#     dxl = IODynamixel(creature="creatures/poppy_torso.json")
-#     if not dxl.correct:
-#         print('Error creating IODynamixel object')
-#         sys.exit()
-
-#     def signal_handler(sig, frame):
-#             #dxl.disableTorque(dxl.get_motor_names())
-#             dxl.stop()
-#             sys.exit(0)
-
-#     signal.signal(signal.SIGINT, signal_handler)
-
-#     y = list(20*np.sin(np.linspace(0, 2*np.pi, num=80)))
-
-#     rec1 = {'fps':40,
-#             'data':{
-#                 'r_elbow_y':list(20*np.sin(np.linspace(0, 2*np.pi, num=80))),
-#                 'r_arm_z':list(10*np.cos(np.linspace(0, 2*np.pi, num=80))),
-#                 'l_elbow_y':list(20*np.sin(np.linspace(0, 2*np.pi, num=80))),
-#                 'l_arm_z':list(10*np.cos(np.linspace(0, 2*np.pi, num=80)))
-#                 }
-#             }
-
-#     dxl.start()
-#     dxl.enableTorque(dxl.get_motor_names())
