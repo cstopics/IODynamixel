@@ -2,6 +2,8 @@
 
 Library to control Dynamixel motors vía *creature* scheme.
 
+Do not forget to visit our web page: https://cstopics.github.io/cstopics/
+
 ## Dependencies
 
 * Python >= 3.5
@@ -119,5 +121,10 @@ Record, save and play custom movement (only with real robot):
 >>> dxl.saveMovement(mov2, '{path to the output json file, including the extension}')
 >>> dxl.playMovementBlock(mov2)
 ```
+
+## Predefined movements
+
+* saludo.json
+* macarena.json
 
 ## Thanks!
