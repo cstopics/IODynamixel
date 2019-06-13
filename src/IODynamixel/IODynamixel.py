@@ -110,6 +110,7 @@ class IODynamixel:
 
         self.correct = True
 
+
     def syncWriteMovingSpeed(self):
         for motor in self.motors:
             param_goal_position = \
@@ -320,6 +321,12 @@ class IODynamixel:
     def setAngle(self, names, angle):
         for i, name in enumerate(names):
             self.motors[name]['robotGoal'] = int(angle[i])
+
+    def getAngle(self, names):
+        angles = [0]*len(names)
+        for i, name in enumerate(names):
+            angles[i]=self.motors[name]['motorAngle']
+        return angles 
 
     def playMovement(self, movement):
         if self.playing:
