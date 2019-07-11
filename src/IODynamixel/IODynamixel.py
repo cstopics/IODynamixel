@@ -9,6 +9,15 @@ import json
 
 """IODynamixel: Package to control dynamixel motors"""
 
+def read_creature(creature):
+    if creature[-5:]!='.json':
+        print("Error: Incorrect creature file extension.")
+        return
+    creatureJson = creature.format(os.path.dirname(os.path.realpath(__file__)))
+    with open(creatureJson) as f:
+        motors = json.load(f)
+    return motors
+
 class IODynamixel:
     """IODynamixel controller"""
     ADDR_MX_TORQUE_ENABLE = 24
